@@ -255,7 +255,7 @@ async def process_birthdate(
     user_data = await state.get_data()
     name = user_data.get("user_name", "не указано")
 
-    await state.clear()
+    await state.set_state(None)
 
     await message.answer(
         f"Данные сохранены!\n"
@@ -306,7 +306,7 @@ async def handle_ai_message(
     try:
         response = await asyncio.to_thread(
             ai_client.models.generate_content,
-            model=os.getenv("GEMINI_MODEL", "gemini-3.6-flash"),
+            model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
             contents=prompt_with_context,
             config={
                 "system_instruction": SYUTSAI_SYSTEM_INSTRUCTION,
@@ -354,8 +354,6 @@ async def main():
 
 
 if __name__ == "__main__":
-    # Для Render Web Service открываем порт до запуска polling.
-    # Это предотвращает ошибку "No open ports detected".
     start_health_server()
 
     try:
