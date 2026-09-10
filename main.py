@@ -141,7 +141,7 @@ async def process_birthdate(message: types.Message, state: FSMContext):
 
 
 # ==========================================
-# 6. Основной диалог с Gemini 3.6 Flash
+# 6. Основной диалог с Gemini 3.6 Flash (Неблокирующий)
 # ==========================================
 
 @dp.message(F.text)
@@ -167,7 +167,9 @@ async def handle_ai_message(message: types.Message, state: FSMContext):
             f"Вопрос пользователя: {message.text}"
         )
 
-        response = ai_client.models.generate_content(
+        # Вызов генерации в фоновом потоке, чтобы бот не зависал во время ожидания ответа
+        response = await asyncio.to_thread(
+            ai_client.models.generate_content,
             model="gemini-3.6-flash",
             contents=prompt_with_context,
             config={
