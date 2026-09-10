@@ -6,7 +6,7 @@ from aiogram import Bot, Dispatcher, types, F
 from google import genai
 
 # ==========================================
-# 1. Health Check Сервер (для Render / Railway / Koyeb)
+# 1. Веб-сервер Health Check для облачного хостинга
 # ==========================================
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
@@ -24,11 +24,11 @@ threading.Thread(target=run_dummy_server, daemon=True).start()
 
 
 # ==========================================
-# 2. Функция безопасной нарезки длинного текста
+# 2. Нарезка сообщений под лимит Telegram (4096 символов)
 # ==========================================
 
 def split_text(text: str, max_size: int = 4000) -> list[str]:
-    """Разбивает текст на блоки не более 4000 символов с сохранением абзацев."""
+    """Разбивает текст на блоки не более 4000 символов, не ломая предложения и строки."""
     if not text:
         return []
     if len(text) <= max_size:
@@ -62,7 +62,7 @@ def split_text(text: str, max_size: int = 4000) -> list[str]:
 
 
 # ==========================================
-# 3. Инициализация и Системный сценарий СЮЦАЙ
+# 3. Инициализация клиентов и жесткий сценарий СЮЦАЙ
 # ==========================================
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -93,7 +93,7 @@ async def handle_message(message: types.Message):
     await bot.send_chat_action(message.chat.id, "typing")
     try:
         response = ai_client.models.generate_content(
-            model="gemini-3.6-flash",
+            model="gemini-2.5-flash",
             contents=message.text,
             config={
                 "system_instruction": SYUTSAI_SYSTEM_INSTRUCTION,
@@ -102,7 +102,6 @@ async def handle_message(message: types.Message):
         )
         
         reply_text = response.text or "ИИ вернул пустой ответ."
-
         messages_to_send = split_text(reply_text, max_size=4000)
 
         for chunk in messages_to_send:
