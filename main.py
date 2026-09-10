@@ -20,7 +20,7 @@ async def handle_message(message: types.Message):
     await bot.send_chat_action(message.chat.id, "typing")
     try:
         response = await ai_client.chat.completions.create(
-            model="deepseek/deepseek-r1:free",
+            model="openrouter/free",
             messages=[
                 {"role": "system", "content": "Ты полезный и точный ИИ-ассистент."},
                 {"role": "user", "content": message.text}
