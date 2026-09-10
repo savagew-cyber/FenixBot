@@ -1,35 +1,26 @@
 import os
 import asyncio
 from aiogram import Bot, Dispatcher, types, F
-from openai import AsyncOpenAI
+from google import genai
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-AI_API_KEY = os.environ.get("AI_API_KEY")
+GEMINI_KEY = os.environ.get("GEMINI_KEY")
 
 bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher()
-
-# Подключение к OpenRouter
-ai_client = AsyncOpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=AI_API_KEY,
-)
+ai_client = genai.Client(api_key=GEMINI_KEY)
 
 @dp.message(F.text)
 async def handle_message(message: types.Message):
     await bot.send_chat_action(message.chat.id, "typing")
     try:
-        response = await ai_client.chat.completions.create(
-            model="openrouter/free",
-            messages=[
-                {"role": "system", "content": "Ты полезный и точный ИИ-ассистент."},
-                {"role": "user", "content": message.text}
-            ],
-            max_tokens=1024,
+        response = ai_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=message.text,
         )
-        await message.answer(response.choices[0].message.content)
+        await message.answer(response.text)
     except Exception as e:
-        await message.answer(f"Ошибка: {e}")
+        await message.answer(f"Ошибка ИИ: {e}")
 
 async def main():
     await dp.start_polling(bot)
