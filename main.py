@@ -2,11 +2,16 @@ import os
 import threading
 import asyncio
 from http.server import HTTPServer, BaseHTTPRequestHandler
+
 from aiogram import Bot, Dispatcher, types, F
+from aiogram.filters import CommandStart, Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.storage.memory import MemoryStorage
 from google import genai
 
 # ==========================================
-# 1. Веб-сервер Health Check для облачного хостинга
+# 1. Health Check Сервер (для Render/Railway)
 # ==========================================
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
@@ -24,11 +29,10 @@ threading.Thread(target=run_dummy_server, daemon=True).start()
 
 
 # ==========================================
-# 2. Нарезка сообщений под лимит Telegram (4096 символов)
+# 2. Нарезка длинного текста под лимит 4000 знаков
 # ==========================================
 
 def split_text(text: str, max_size: int = 4000) -> list[str]:
-    """Разбивает текст на блоки не более 4000 символов, не ломая предложения и строки."""
     if not text:
         return []
     if len(text) <= max_size:
@@ -62,14 +66,24 @@ def split_text(text: str, max_size: int = 4000) -> list[str]:
 
 
 # ==========================================
-# 3. Инициализация клиентов и жесткий сценарий СЮЦАЙ
+# 3. Настройка FSM (Состояния анкеты)
+# ==========================================
+
+class RegistrationState(StatesGroup):
+    waiting_for_name = State()
+    waiting_for_birthdate = State()
+
+
+# ==========================================
+# 4. Инициализация клиентов и Сценарий СЮЦАЙ
 # ==========================================
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GEMINI_KEY = os.environ.get("GEMINI_KEY")
 
+storage = MemoryStorage()
 bot = Bot(token=TELEGRAM_TOKEN)
-dp = Dispatcher()
+dp = Dispatcher(storage=storage)
 ai_client = genai.Client(api_key=GEMINI_KEY)
 
 SYUTSAI_SYSTEM_INSTRUCTION = """
@@ -85,22 +99,82 @@ SYUTSAI_SYSTEM_INSTRUCTION = """
 
 
 # ==========================================
-# 4. Обработка входящих сообщений
+# 5. Обработка регистрации (Имя и Дата рождения)
+# ==========================================
+
+@dp.message(CommandStart())
+@dp.message(Command("reset"))
+async def cmd_start(message: types.Message, state: FSMContext):
+    await state.clear()
+    await state.set_state(RegistrationState.waiting_for_name)
+    await message.answer(
+        "Здравствуйте! Чтобы начать консультацию в рамках методологии Сюцай, представьтесь, пожалуйста.\n\n"
+        "Как вас зовут?"
+    )
+
+@dp.message(RegistrationState.waiting_for_name, F.text)
+async def process_name(message: types.Message, state: FSMContext):
+    user_name = message.text.strip()
+    await state.update_data(user_name=user_name)
+    await state.set_state(RegistrationState.waiting_for_birthdate)
+    await message.answer(
+        f"Приятно познакомиться, {user_name}!\n\n"
+        "Теперь укажите вашу полную дату рождения в формате ДД.ММ.ГГГГ (например, 26.09.1981):"
+    )
+
+@dp.message(RegistrationState.waiting_for_birthdate, F.text)
+async def process_birthdate(message: types.Message, state: FSMContext):
+    birthdate = message.text.strip()
+    await state.update_data(birthdate=birthdate)
+    
+    user_data = await state.get_data()
+    name = user_data.get("user_name")
+    
+    await state.set_state(None)
+    await message.answer(
+        f"Данные сохранены!\n"
+        f"Имя: {name}\n"
+        f"Дата рождения: {birthdate}\n\n"
+        "Теперь вы можете задать любой вопрос по методологии Сюцай. "
+        "Если захотите сменить данные, отправьте команду /reset."
+    )
+
+
+# ==========================================
+# 6. Основной диалог с Gemini 3.6 Flash
 # ==========================================
 
 @dp.message(F.text)
-async def handle_message(message: types.Message):
+async def handle_ai_message(message: types.Message, state: FSMContext):
+    user_data = await state.get_data()
+    name = user_data.get("user_name")
+    birthdate = user_data.get("birthdate")
+
+    if not name or not birthdate:
+        await state.set_state(RegistrationState.waiting_for_name)
+        await message.answer(
+            "Для точного расчета по методологии Сюцай мне нужны ваши данные.\n\n"
+            "Пожалуйста, напишите, как вас зовут?"
+        )
+        return
+
     await bot.send_chat_action(message.chat.id, "typing")
     try:
+        prompt_with_context = (
+            f"Данные пользователя:\n"
+            f"Имя: {name}\n"
+            f"Дата рождения: {birthdate}\n\n"
+            f"Вопрос пользователя: {message.text}"
+        )
+
         response = ai_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=message.text,
+            model="gemini-3.6-flash",
+            contents=prompt_with_context,
             config={
                 "system_instruction": SYUTSAI_SYSTEM_INSTRUCTION,
-                "temperature": 0.2,
             }
         )
-        
+
         reply_text = response.text or "ИИ вернул пустой ответ."
         messages_to_send = split_text(reply_text, max_size=4000)
 
@@ -113,7 +187,7 @@ async def handle_message(message: types.Message):
 
 
 # ==========================================
-# 5. Запуск бота
+# 7. Запуск бота
 # ==========================================
 
 async def main():
