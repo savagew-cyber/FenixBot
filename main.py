@@ -20,7 +20,7 @@ async def handle_message(message: types.Message):
     await bot.send_chat_action(message.chat.id, "typing")
     try:
         response = await ai_client.chat.completions.create(
-            model="meta-llama/llama-3.3-70b-instruct:free",
+            model="mistralai/mistral-7b-instruct:free",
             messages=[
                 {"role": "system", "content": "Ты полезный и точный ИИ-ассистент."},
                 {"role": "user", "content": message.text}
